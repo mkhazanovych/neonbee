@@ -20,6 +20,13 @@ import io.neonbee.endpoint.metrics.MetricsEndpoint;
 import io.neonbee.endpoint.odatav4.ODataV4Endpoint;
 import io.neonbee.endpoint.raw.RawEndpoint;
 import io.neonbee.internal.handler.DefaultErrorHandler;
+import io.neonbee.internal.handler.factories.CacheControlHandlerFactory;
+import io.neonbee.internal.handler.factories.CorrelationIdHandlerFactory;
+import io.neonbee.internal.handler.factories.DisallowingFileUploadBodyHandlerFactory;
+import io.neonbee.internal.handler.factories.InstanceInfoHandlerFactory;
+import io.neonbee.internal.handler.factories.LoggerHandlerFactory;
+import io.neonbee.internal.handler.factories.RoutingHandlerFactory;
+import io.neonbee.internal.handler.factories.TimeoutHandlerFactory;
 import io.neonbee.internal.json.ImmutableJsonObject;
 import io.neonbee.internal.verticle.ServerVerticle;
 import io.vertx.codegen.annotations.DataObject;
@@ -101,6 +108,7 @@ import io.vertx.ext.web.handler.ErrorHandler;
 @DataObject(generateConverter = true, publicConverter = false)
 @SuppressWarnings({ "PMD.ExcessivePublicCount", "PMD.CyclomaticComplexity", "PMD.TooManyMethods", "PMD.GodClass" })
 public class ServerConfig extends HttpServerOptions {
+
     public enum SessionHandling {
         /**
          * No session handling.
@@ -189,15 +197,23 @@ public class ServerConfig extends HttpServerOptions {
      */
     public static final String DEFAULT_SESSION_COOKIE_NAME = "neonbee-web.session";
 
+    /**
+     * List of instances of {@link RoutingHandlerFactory} that are loaded by default.
+     */
+    public static final List<String> DEFAULT_HANDLER_FACTORIES_CLASS_NAMES =
+            List.of(LoggerHandlerFactory.class.getName(), DisallowingFileUploadBodyHandlerFactory.class.getName(),
+                    CorrelationIdHandlerFactory.class.getName(), TimeoutHandlerFactory.class.getName(),
+                    CacheControlHandlerFactory.class.getName(), InstanceInfoHandlerFactory.class.getName());
+
     private static final String PROPERTY_PORT = "port";
 
     private static final List<EndpointConfig> DEFAULT_ENDPOINT_CONFIGS = Collections.unmodifiableList(Stream
             .of(RawEndpoint.class, ODataV4Endpoint.class, MetricsEndpoint.class)
             .map(endpointClass -> new EndpointConfig().setType(endpointClass.getName())).collect(Collectors.toList()));
 
-    private static final ImmutableBiMap<String, String> REPHRASE_MAP =
-            ImmutableBiMap.of("endpointConfigs", "endpoints", "authChainConfig", "authenticationChain",
-                    "errorHandlerClassName", "errorHandler", "errorHandlerTemplate", "errorTemplate");
+    private static final ImmutableBiMap<String, String> REPHRASE_MAP = ImmutableBiMap.of("endpointConfigs", "endpoints",
+            "authChainConfig", "authenticationChain", "errorHandlerClassName", "errorHandler", "errorHandlerTemplate",
+            "errorTemplate", "handlerFactoriesClassNames", "handlerFactories");
 
     private int timeout = DEFAULT_TIMEOUT;
 
@@ -212,6 +228,8 @@ public class ServerConfig extends HttpServerOptions {
     private List<EndpointConfig> endpointConfigs = new ArrayList<>(DEFAULT_ENDPOINT_CONFIGS);
 
     private List<AuthHandlerConfig> authChainConfig;
+
+    private List<String> handlerFactoriesClassNames = DEFAULT_HANDLER_FACTORIES_CLASS_NAMES;
 
     private String errorHandlerClassName;
 
@@ -402,6 +420,29 @@ public class ServerConfig extends HttpServerOptions {
     @Fluent
     public ServerConfig setAuthChainConfig(List<AuthHandlerConfig> authChainConfig) {
         this.authChainConfig = authChainConfig;
+        return this;
+    }
+
+    /**
+     * Returns a list of {@link RoutingHandlerFactory} names used to instantiate the handler objects that will be added
+     * to the root route. The handlers are added to the route in the order in which they are specified. The class must
+     * implement the {@link RoutingHandlerFactory} interface and must provide a default constructor.
+     *
+     * @return list of {@link RoutingHandlerFactory} names.
+     */
+    public List<String> getHandlerFactoriesClassNames() {
+        return handlerFactoriesClassNames;
+    }
+
+    /**
+     * Set a custom list of {@link RoutingHandlerFactory} names.
+     *
+     * @param handlerFactoriesClassNames the list of {@link RoutingHandlerFactory} names.
+     * @return the {@link ServerConfig} for chaining
+     */
+    @Fluent
+    public ServerConfig setHandlerFactoriesClassNames(List<String> handlerFactoriesClassNames) {
+        this.handlerFactoriesClassNames = handlerFactoriesClassNames;
         return this;
     }
 

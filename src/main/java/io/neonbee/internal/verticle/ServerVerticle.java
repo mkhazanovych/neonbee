@@ -2,7 +2,6 @@ package io.neonbee.internal.verticle;
 
 import static io.vertx.core.Future.failedFuture;
 import static io.vertx.core.Future.succeededFuture;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 import java.lang.invoke.MethodHandles;
 import java.util.List;
@@ -22,24 +21,22 @@ import io.neonbee.config.ServerConfig.SessionHandling;
 import io.neonbee.endpoint.Endpoint;
 import io.neonbee.endpoint.MountableEndpoint;
 import io.neonbee.handler.ErrorHandler;
-import io.neonbee.internal.handler.CacheControlHandler;
 import io.neonbee.internal.handler.ChainAuthHandler;
-import io.neonbee.internal.handler.CorrelationIdHandler;
 import io.neonbee.internal.handler.DefaultErrorHandler;
-import io.neonbee.internal.handler.InstanceInfoHandler;
-import io.neonbee.internal.handler.LoggerHandler;
 import io.neonbee.internal.handler.NotFoundHandler;
+import io.neonbee.internal.handler.factories.RoutingHandlerFactory;
 import io.neonbee.internal.helper.AsyncHelper;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Route;
 import io.vertx.ext.web.Router;
-import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.SessionHandler;
-import io.vertx.ext.web.handler.TimeoutHandler;
 import io.vertx.ext.web.sstore.ClusteredSessionStore;
 import io.vertx.ext.web.sstore.LocalSessionStore;
 import io.vertx.ext.web.sstore.SessionStore;
@@ -97,13 +94,19 @@ public class ServerVerticle extends AbstractVerticle {
 
         return createErrorHandler(config.getErrorHandlerClassName(), vertx).compose(errorHandler -> {
             rootRoute.failureHandler(errorHandler);
-            rootRoute.handler(new LoggerHandler());
-            rootRoute.handler(BodyHandler.create(false /* do not handle file uploads */));
-            rootRoute.handler(new CorrelationIdHandler(config.getCorrelationStrategy()));
-            rootRoute.handler(
-                    TimeoutHandler.create(SECONDS.toMillis(config.getTimeout()), config.getTimeoutStatusCode()));
-            rootRoute.handler(new CacheControlHandler());
-            rootRoute.handler(new InstanceInfoHandler());
+
+            List<Future> handlerFutures = config.getHandlerFactoriesClassNames().stream()
+                    .map(ServerVerticle::instantiateHandler).collect(Collectors.toList());
+            CompositeFuture.all(handlerFutures).onSuccess(event -> {
+                List<Handler<RoutingContext>> handlers = event.list();
+                handlers.forEach(routingContextHandler -> {
+                    if (LOGGER.isInfoEnabled()) {
+                        LOGGER.info("Appending \"{}\" request handler to root router.",
+                                routingContextHandler.getClass().getName());
+                    }
+                    rootRoute.handler(routingContextHandler);
+                });
+            });
 
             createSessionStore(vertx, config.getSessionHandling()).map(SessionHandler::create)
                     .ifPresent(sessionHandler -> rootRoute
@@ -131,6 +134,29 @@ public class ServerVerticle extends AbstractVerticle {
             LOGGER.error("The custom ErrorHandler must offer a default constructor.", e);
             return failedFuture(e);
         } catch (Exception e) {
+            return failedFuture(e);
+        }
+    }
+
+    /**
+     * Instantiate the {@link Handler} by executing the {@link RoutingHandlerFactory}.
+     *
+     * @param handlerFactoryName {@link RoutingHandlerFactory} name
+     * @return Future with the Handler instance
+     */
+    @VisibleForTesting
+    static Future<Handler<RoutingContext>> instantiateHandler(String handlerFactoryName) {
+        try {
+            Class<?> factoryClass = Class.forName(handlerFactoryName);
+            if (!RoutingHandlerFactory.class.isAssignableFrom(factoryClass)) {
+                return failedFuture("Class \"" + handlerFactoryName + "\" is not an instance of "
+                        + RoutingHandlerFactory.class.getName());
+            }
+
+            RoutingHandlerFactory factoryInstance = (RoutingHandlerFactory) factoryClass.getConstructor().newInstance();
+            return factoryInstance.createHandler();
+        } catch (Exception e) {
+            LOGGER.error("Failed to instantiate Handler: {}", handlerFactoryName, e);
             return failedFuture(e);
         }
     }

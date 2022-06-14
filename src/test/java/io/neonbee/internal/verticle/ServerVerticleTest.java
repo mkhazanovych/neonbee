@@ -15,13 +15,17 @@ import org.junit.jupiter.api.TestInfo;
 
 import io.neonbee.config.ServerConfig.SessionHandling;
 import io.neonbee.internal.handler.DefaultErrorHandler;
+import io.neonbee.internal.handler.factories.RoutingHandlerFactory;
 import io.neonbee.test.base.NeonBeeTestBase;
 import io.neonbee.test.helper.WorkingDirectoryBuilder;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.SharedData;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.sstore.ClusteredSessionStore;
 import io.vertx.ext.web.sstore.LocalSessionStore;
 import io.vertx.junit5.Checkpoint;
@@ -146,4 +150,66 @@ class ServerVerticleTest extends NeonBeeTestBase {
             return super.provideWorkingDirectoryBuilder(testInfo, testContext);
         }
     }
+
+    @Test
+    @Timeout(value = 2, timeUnit = TimeUnit.SECONDS)
+    void testInstantiateHandler(VertxTestContext testContext) {
+        ServerVerticle.instantiateHandler(TestRoutingHandlerFactory.class.getName())
+                .onComplete(testContext.succeeding(clazz -> testContext.verify(() -> {
+                    assertThat(clazz).isInstanceOf(Handler.class);
+                    testContext.completeNow();
+                })));
+    }
+
+    @Test
+    @Timeout(value = 2, timeUnit = TimeUnit.SECONDS)
+    void testFailingInstantiateHandler(VertxTestContext testContext) {
+        ServerVerticle.instantiateHandler(TestFailingRoutingHandlerFactory.class.getName())
+                .onComplete(testContext.failing(throwable -> testContext.verify(() -> {
+                    assertThat(throwable).hasMessageThat()
+                            .isEqualTo(TestFailingRoutingHandlerFactory.EXCEPTION_MESSAGE);
+                    testContext.completeNow();
+                })));
+    }
+
+    @Test
+    @Timeout(value = 2, timeUnit = TimeUnit.SECONDS)
+    void testExptionInstantiateHandler(VertxTestContext testContext) {
+        ServerVerticle.instantiateHandler(TestThrowingRoutingHandlerFactory.class.getName())
+                .onComplete(testContext.failing(throwable -> testContext.verify(() -> {
+                    assertThat(throwable).isInstanceOf(IllegalStateException.class);
+                    assertThat(throwable).hasMessageThat()
+                            .isEqualTo(TestThrowingRoutingHandlerFactory.EXCEPTION_MESSAGE);
+                    testContext.completeNow();
+                })));
+    }
+
+    public static class TestRoutingHandlerFactory implements RoutingHandlerFactory {
+
+        @Override
+        public Future<Handler<RoutingContext>> createHandler() {
+            return Future.succeededFuture(event -> {});
+        }
+    }
+
+    public static class TestFailingRoutingHandlerFactory implements RoutingHandlerFactory {
+
+        public static final String EXCEPTION_MESSAGE = "test failing createHandler.";
+
+        @Override
+        public Future<Handler<RoutingContext>> createHandler() {
+            return Future.failedFuture(EXCEPTION_MESSAGE);
+        }
+    }
+
+    public static class TestThrowingRoutingHandlerFactory implements RoutingHandlerFactory {
+
+        public static final String EXCEPTION_MESSAGE = "Test exception thrown in createHandler.";
+
+        @Override
+        public Future<Handler<RoutingContext>> createHandler() {
+            throw new IllegalStateException(EXCEPTION_MESSAGE);
+        }
+    }
+
 }
