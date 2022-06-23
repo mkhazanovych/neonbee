@@ -326,7 +326,8 @@ class DataContextImplTest {
     @ParameterizedTest(name = "{index}: with session: {0}")
     @MethodSource("withSessions")
     @Timeout(value = 2, timeUnit = TimeUnit.SECONDS)
-    @SuppressWarnings("PMD.UnusedFormalParameter") // Required for display name
+    @SuppressWarnings("PMD.UnusedFormalParameter")
+    // Required for display name
     @DisplayName("Constructor that accepts RoutingContext works correct")
     void testWithRoutingContext(Session sessionMock, String expectedSessionValue) {
         RoutingContext routingContextMock = mock(RoutingContext.class);
@@ -362,17 +363,41 @@ class DataContextImplTest {
     @Test
     @DisplayName("test encoding / decoding context")
     void testEncodeDecode() {
-        DataContext dataContext = DataContextImpl
-                .decodeContextFromString(DataContextImpl.encodeContextToString(new DataContextImpl("expected1",
-                        "expectedSessionId", "expected2", new JsonObject().put("expectedKey", "expectedValue"),
-                        new JsonObject().put("expected1", "expected2").put("expectedArray", new JsonArray().add(0))
-                                .put("expectedNull", (Object) null).getMap())));
-        assertThat(dataContext.correlationId()).isEqualTo("expected1");
-        assertThat(dataContext.sessionId()).isEqualTo("expectedSessionId");
-        assertThat(dataContext.bearerToken()).isEqualTo("expected2");
-        assertThat(dataContext.userPrincipal()).isEqualTo(new JsonObject().put("expectedKey", "expectedValue"));
-        assertThat(new JsonObject(dataContext.data())).isEqualTo(new JsonObject().put("expected1", "expected2")
-                .put("expectedArray", new JsonArray().add(0)).put("expectedNull", (Object) null));
+        DataContext dataContext = DataContextImpl.decodeContextFromString(DataContextImpl.encodeContextToString(
+                new DataContextImpl("correlationId", "sessionId", "token", new JsonObject().put("user", "pass"),
+                        new JsonObject().put("data1", "data1").put("dataArray", new JsonArray().add(0))
+                                .put("dataNull", (Object) null).getMap(),
+                        new JsonObject().put("responseData1", "data1").put("responseArray", new JsonArray().add(0))
+                                .put("responseNull", (Object) null).getMap(),
+                        null)));
+        assertThat(dataContext.correlationId()).isEqualTo("correlationId");
+        assertThat(dataContext.sessionId()).isEqualTo("sessionId");
+        assertThat(dataContext.bearerToken()).isEqualTo("token");
+        assertThat(dataContext.userPrincipal()).isEqualTo(new JsonObject().put("user", "pass"));
+        assertThat(new JsonObject(dataContext.data())).isEqualTo(new JsonObject().put("data1", "data1")
+                .put("dataArray", new JsonArray().add(0)).put("dataNull", (Object) null));
+        assertThat(new JsonObject(dataContext.responseMetadata()))
+                .isEqualTo(new JsonObject().put("responseData1", "data1").put("responseArray", new JsonArray().add(0))
+                        .put("responseNull", (Object) null));
+    }
+
+    @Test
+    @DisplayName("test response meta data handling")
+    void testResponseMetadata() {
+        DataContext context = new DataContextImpl();
+        assertThat(context.responseMetadata()).isEmpty();
+        context.setResponseMetadata(Map.of("key", "value"));
+        assertThat(context.responseMetadata()).hasSize(1);
+        assertThat(context.<String>getResponseMetadataEntry("key")).isEqualTo("value");
+        context.putResponseMetadataEntry("key", "newvalue");
+        assertThat(context.<String>getResponseMetadataEntry("key")).isEqualTo("newvalue");
+        context.removeResponseMetadataEntry("key");
+        assertThat(context.<String>getResponseMetadataEntry("key")).isNull();
+        assertThat(context.responseMetadata()).hasSize(0);
+        context.setResponseMetadata(Map.of("key", "value"));
+        context.mergeResponseMetadata(Map.of("key", "newvalue"));
+        assertThat(context.responseMetadata()).hasSize(1);
+        assertThat(context.<String>getResponseMetadataEntry("key")).isEqualTo("newvalue");
     }
 
     private int contextPathSize(DataContext context) {

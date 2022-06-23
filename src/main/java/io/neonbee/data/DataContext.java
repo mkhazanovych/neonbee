@@ -97,6 +97,62 @@ public interface DataContext {
     <T> T remove(String key);
 
     /**
+     * Arbitrary response metadata of this context, which is passed through each processing step of the verticle
+     * backwards from callee to caller.
+     *
+     * @return all the context response metadata as a map.
+     */
+    Map<String, Object> responseMetadata();
+
+    /**
+     * Sets all the response meta data.
+     *
+     * @param data the data, must be compatible to {@link JsonObject#JsonObject(Map)}
+     * @return a reference to this DataContext for chaining
+     */
+    DataContext setResponseMetadata(Map<String, Object> data);
+
+    /**
+     * Merges the response meta data of a given map into the existing response context data map.
+     * <p>
+     * Note: This method does not perform a deep merge operation, but overrides already existing elements w/o merging
+     *
+     * @param data the response data to merge, must be compatible to {@link JsonObject#JsonObject(Map)}
+     * @return a reference to this DataContext for chaining
+     */
+    DataContext mergeResponseMetadata(Map<String, Object> data);
+
+    /**
+     * Put some arbitrary response metadata in the context. This will be available in any data verticle that receive the
+     * context.
+     *
+     * @param key   the key for the data
+     * @param value the data, must be compatible to {@link JsonObject#put(String, Object)} and should be primitive,
+     *              otherwise it can't be serialized via the event bus by default.
+     * @return a reference to this DataContext for chaining
+     */
+    DataContext putResponseMetadataEntry(String key, Object value);
+
+    /**
+     * Get some response metadata from the context. The data is available in any data verticle that receive the context.
+     *
+     * @param key the key for the data
+     * @param <T> the type of the parameter to be returned
+     * @return the data, as expected from {@link JsonObject#getValue(String)}
+     */
+    <T> T getResponseMetadataEntry(String key);
+
+    /**
+     * Remove some response metadata from the context. The data is available in any data verticle that receive the
+     * context.
+     *
+     * @param key the key for the data
+     * @param <T> the type of the parameter to be returned
+     * @return the previous data associated with the key, as expected from {@link JsonObject#remove(String)}
+     */
+    <T> T removeResponseMetadataEntry(String key);
+
+    /**
      * Returns the path of verticle this context was involved in.
      *
      * @return the path of the verticle called

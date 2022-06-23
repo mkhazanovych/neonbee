@@ -2,6 +2,7 @@ package io.neonbee.data.internal;
 
 import static com.google.common.collect.Iterators.unmodifiableIterator;
 import static io.neonbee.internal.handler.CorrelationIdHandler.CORRELATION_ID;
+import static io.neonbee.internal.helper.CollectionHelper.isNullOrEmpty;
 import static io.neonbee.internal.helper.CollectionHelper.mutableCopyOf;
 import static io.neonbee.internal.helper.HostHelper.getHostIp;
 
@@ -52,6 +53,8 @@ public class DataContextImpl implements DataContext {
 
     private static final Pattern BEARER_AUTHENTICATION_PATTERN = Pattern.compile("Bearer\\s(.+)");
 
+    private static final String RESPONSE_METADATA_KEY = "responseMetadata";
+
     private final String correlationId;
 
     private final String bearerToken;
@@ -61,6 +64,8 @@ public class DataContextImpl implements DataContext {
     private final String sessionId;
 
     private Map<String, Object> data;
+
+    private Map<String, Object> responseMetadata;
 
     private Deque<DataVerticleCoordinate> pathStack;
 
@@ -104,9 +109,16 @@ public class DataContextImpl implements DataContext {
         this(correlationId, null, bearerToken, userPrincipal, data, paths);
     }
 
-    @SuppressWarnings("PMD.ConstructorCallsOverridableMethod")
+    @SuppressWarnings({ "PMD.ConstructorCallsOverridableMethod", "ChainingConstructorIgnoresParameter",
+            "PMD.UnusedFormalParameter" })
     public DataContextImpl(String correlationId, String sessionId, String bearerToken, JsonObject userPrincipal,
             Map<String, Object> data, Deque<DataVerticleCoordinate> paths) {
+        this(correlationId, sessionId, bearerToken, userPrincipal, data, null, paths);
+    }
+
+    @SuppressWarnings({ "PMD.ConstructorCallsOverridableMethod" })
+    public DataContextImpl(String correlationId, String sessionId, String bearerToken, JsonObject userPrincipal,
+            Map<String, Object> data, Map<String, Object> resposneMetadata, Deque<DataVerticleCoordinate> paths) {
         this.correlationId = correlationId;
         this.sessionId = sessionId;
         this.bearerToken = bearerToken;
@@ -114,6 +126,7 @@ public class DataContextImpl implements DataContext {
         this.userPrincipal = Optional.ofNullable(userPrincipal).map(JsonObject::getMap)
                 .map(Collections::unmodifiableMap).map(JsonObject::new).orElse(null);
         this.setData(data); // create a mutable copy of the map
+        this.setResponseMetadata(resposneMetadata); // create a mutable copy of the map
         this.setPath(paths); // create a mutable copy of the dequeue
     }
 
@@ -228,6 +241,62 @@ public class DataContextImpl implements DataContext {
         return (T) value;
     }
 
+    @Override
+    public Map<String, Object> responseMetadata() {
+        if (this.responseMetadata == null) {
+            this.responseMetadata = new HashMap<>();
+        }
+        return this.responseMetadata;
+    }
+
+    @Override
+    @SuppressWarnings("PMD.NullAssignment")
+    public final DataContext setResponseMetadata(Map<String, Object> data) {
+        if (!isNullOrEmpty(data)) {
+            this.responseMetadata = mutableCopyOf(data);
+        }
+        return this;
+    }
+
+    @Override
+    public DataContext mergeResponseMetadata(Map<String, Object> data) {
+        if (!isNullOrEmpty(data)) {
+            // instead of putAll, might be worth it to write a more sophisticated logic using .merge()
+            this.responseMetadata().putAll(mutableCopyOf(data));
+        }
+        return this;
+    }
+
+    @Override
+    public DataContext putResponseMetadataEntry(String key, Object value) {
+        this.responseMetadata().put(key, value);
+        return this;
+    }
+
+    @Override
+    @SuppressWarnings({ "unchecked", "rawtypes", "TypeParameterUnusedInFormals" })
+    public <T> T getResponseMetadataEntry(String key) {
+        Object value = responseMetadata().get(key);
+        if (value instanceof Map) {
+            value = new JsonObject((Map) value);
+        } else if (value instanceof List) {
+            value = new JsonArray((List) value);
+        }
+        return (T) value;
+    }
+
+    @Override
+    @SuppressWarnings({ "unchecked", "rawtypes", "TypeParameterUnusedInFormals" })
+    public <T> T removeResponseMetadataEntry(String key) {
+        Object value = responseMetadata().remove(key);
+        if (value instanceof Map) {
+            value = new JsonObject((Map) value);
+        } else if (value instanceof List) {
+            value = new JsonArray((List) value);
+        }
+        return (T) value;
+    }
+
     /**
      * Encodes a given {@link DataContext} to string.
      *
@@ -241,7 +310,8 @@ public class DataContextImpl implements DataContext {
         }
         return new JsonObject().put(CORRELATION_ID, context.correlationId()).put(SESSION_ID_KEY, context.sessionId())
                 .put(BEARER_TOKEN_KEY, context.bearerToken()).put(USER_PRINCIPAL_KEY, context.userPrincipal())
-                .put(DATA_KEY, context.data()).put(PATH_KEY, pathToJson(context.path())).toString();
+                .put(DATA_KEY, context.data()).put(RESPONSE_METADATA_KEY, context.responseMetadata())
+                .put(PATH_KEY, pathToJson(context.path())).toString();
     }
 
     private static JsonArray pathToJson(Iterator<DataVerticleCoordinate> path) {
@@ -264,6 +334,8 @@ public class DataContextImpl implements DataContext {
         return new DataContextImpl(contextJson.getString(CORRELATION_ID), contextJson.getString(SESSION_ID_KEY),
                 contextJson.getString(BEARER_TOKEN_KEY), contextJson.getJsonObject(USER_PRINCIPAL_KEY),
                 Optional.ofNullable(contextJson.getJsonObject(DATA_KEY)).map(JsonObject::getMap).orElse(null),
+                Optional.ofNullable(contextJson.getJsonObject(RESPONSE_METADATA_KEY)).map(JsonObject::getMap)
+                        .orElse(null),
                 Optional.ofNullable(contextJson.getJsonArray(PATH_KEY)).map(DataContextImpl::pathFromJson)
                         .orElse(null));
     }
