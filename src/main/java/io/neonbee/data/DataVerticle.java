@@ -117,10 +117,13 @@ public abstract class DataVerticle<T> extends AbstractVerticle implements DataAd
                         if (asyncReply.succeeded()) {
                             DataContext responseDataContext =
                                     decodeContextFromString(asyncReply.result().headers().get(CONTEXT_HEADER));
-                            context.mergeData(ofNullable(responseDataContext).map(DataContext::data).orElse(null));
+                            context.setData(ofNullable(
+                                    decodeContextFromString(asyncReply.result().headers().get(CONTEXT_HEADER)))
+                                            .map(DataContext::data).orElse(null));
                             context.mergeResponseMetadata(
                                     ofNullable(responseDataContext).map(DataContext::responseMetadata).orElse(null));
                             return succeededFuture(asyncReply.result().body());
+
                         } else {
                             Throwable cause = asyncReply.cause();
                             if (LOGGER.isWarnEnabled()) {
@@ -295,6 +298,18 @@ public abstract class DataVerticle<T> extends AbstractVerticle implements DataAd
      * @return the name as string.
      */
     public abstract String getName();
+
+    /**
+     * Returns how this verticle handles the response metadata. If MANUAL_PROCESS is returned, it is the job of the
+     * verticle to handle the merging and determine the returned metadata. If AUTO_MERGE is returned, the metadata of
+     * all invoked verticles will be automatically merged and returned. The default is set to MANUAL_PROCESS, each
+     * verticle can overwrite this method to use a different policy.
+     *
+     * @return how this verticle handles the response metadata.
+     */
+    public ResponseMetadataPropagationPolicy getResponseMetadataPropagationPolicy() {
+        return ResponseMetadataPropagationPolicy.MANUAL_PROCESS;
+    }
 
     /**
      * The namespace of a verticle will be determined by a given {@link NeonBeeDeployable} annotation. If not present,
@@ -568,7 +583,10 @@ public abstract class DataVerticle<T> extends AbstractVerticle implements DataAd
             }).compose(requiredCompositeOrNothing -> {
                 List<Tag> tags = retrieveDataTags();
                 try {
-                    mergeResponseMetadataIntoContext(context, requestResponseMetadata);
+                    // Handle merging of reponse context of invoked verticles
+                    if (getResponseMetadataPropagationPolicy() == ResponseMetadataPropagationPolicy.AUTO_MERGE) {
+                        mergeResponseMetadataIntoContext(context, requestResponseMetadata);
+                    }
                     Future<T> future = retrieveData(query, new DataMap(requestResults), context);
                     reportRetrieveDataMetrics(tags, future);
                     return future;

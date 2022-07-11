@@ -12,6 +12,7 @@ import static io.neonbee.endpoint.odatav4.internal.olingo.processor.ProcessorHel
 import static io.neonbee.endpoint.odatav4.internal.olingo.processor.ProcessorHelper.RESPONSE_HEADER_PREFIX;
 import static io.neonbee.endpoint.odatav4.internal.olingo.processor.ProcessorHelper.forwardRequest;
 import static io.neonbee.internal.helper.StringHelper.EMPTY;
+import static io.vertx.core.Future.succeededFuture;
 import static java.util.Optional.ofNullable;
 
 import java.io.ByteArrayInputStream;
@@ -137,9 +138,9 @@ public class CountEntityCollectionProcessor extends AsynchronousProcessor
                                         .orElse(Boolean.FALSE);
                         resultEntityList = topExecuted ? resultEntityList
                                 : applyTopQueryOption(uriInfo.getTopOption(), resultEntityList);
-                        if (!expandExecuted) {
-                            applyExpandQueryOptions(uriInfo, resultEntityList).onComplete(responsePromise);
-                        }
+                        Future<List<Entity>> resultEntityListFuture = expandExecuted ? succeededFuture(resultEntityList)
+                                : applyExpandQueryOptions(uriInfo, resultEntityList);
+                        resultEntityListFuture.onComplete(responsePromise);
                     } else {
                         responsePromise.complete(resultEntityList);
                     }
